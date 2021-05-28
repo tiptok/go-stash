@@ -50,29 +50,42 @@ func main() {
 	defer group.Stop()
 
 	for _, processor := range c.Clusters {
-		client, err := elastic.NewClient(
-			elastic.SetSniff(false),
-			elastic.SetURL(processor.Output.ElasticSearch.Hosts...),
-		)
-		logx.Must(err)
-
 		filters := filter.CreateFilters(processor)
-		writer, err := es.NewWriter(processor.Output.ElasticSearch)
-		logx.Must(err)
-
-		var loc *time.Location
-		if len(processor.Output.ElasticSearch.TimeZone) > 0 {
-			loc, err = time.LoadLocation(processor.Output.ElasticSearch.TimeZone)
+		if len(processor.Output.ElasticSearch.Hosts) > 0 {
+			client, err := elastic.NewClient(
+				elastic.SetSniff(false),
+				elastic.SetURL(processor.Output.ElasticSearch.Hosts...),
+			)
 			logx.Must(err)
-		} else {
-			loc = time.Local
+
+			
+			writer, err := es.NewWriter(processor.Output.ElasticSearch)
+			logx.Must(err)
+
+			var loc *time.Location
+			if len(processor.Output.ElasticSearch.TimeZone) > 0 {
+				loc, err = time.LoadLocation(processor.Output.ElasticSearch.TimeZone)
+				logx.Must(err)
+			} else {
+				loc = time.Local
+			}
+			indexer := es.NewIndex(client, processor.Output.ElasticSearch.Index, loc)
+			handle := handler.NewHandler(writer, indexer)
+			handle.AddFilters(filters...)
+			handle.AddFilters(filter.AddUriFieldFilter("url", "uri"))
+			for _, k := range toKqConf(processor.Input.Kafka) {
+				group.Add(kq.MustNewQueue(k, handle))
+			}
 		}
-		indexer := es.NewIndex(client, processor.Output.ElasticSearch.Index, loc)
-		handle := handler.NewHandler(writer, indexer)
-		handle.AddFilters(filters...)
-		handle.AddFilters(filter.AddUriFieldFilter("url", "uri"))
-		for _, k := range toKqConf(processor.Input.Kafka) {
-			group.Add(kq.MustNewQueue(k, handle))
+		if len(processor.Output.Postgresql.Host) > 0 {
+			handle := handler.NewMessageHandlerPG(processor.Output.Postgresql)
+			handle.AddFilters(filters...)
+			handle.TimerCreateLogTable()
+
+			
+			for _, k := range toKqConf(processor.Input.Kafka) {
+				group.Add(kq.MustNewQueue(k, handle))
+			}
 		}
 	}
 

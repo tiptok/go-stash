@@ -3,10 +3,9 @@ Clusters:
     Kafka:
       Name: gostash
       Brokers:
-        - ":172.16.186.16:19092"
-        - "172.16.186.17:19092"
+        - "192.168.139.129:9092"
       Topics:
-        - k8slog
+        - pushMessage
       Group: pro
       Consumers: 16
   Filters:
@@ -39,8 +38,9 @@ Clusters:
       Field: message
       Target: data
   Output:
-    ElasticSearch:
-      Hosts:
-        - "172.16.141.4:9200"
-        - "172.16.141.5:9200"
-      Index: "{.event}-{{yyyy-MM-dd}}"
+    Postgresql:
+      Host: "192.168.100.102"
+      Port: "5432"
+      User: "postgres"
+      Password: "123456"
+      DBName: "mmm_log"

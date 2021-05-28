@@ -20,9 +20,7 @@ func NewHandler(writer *es.Writer, indexer *es.Index) *MessageHandler {
 }
 
 func (mh *MessageHandler) AddFilters(filters ...filter.FilterFunc) {
-	for _, f := range filters {
-		mh.filters = append(mh.filters, f)
-	}
+	mh.filters = append(mh.filters, filters...)
 }
 
 func (mh *MessageHandler) Consume(_, val string) error {

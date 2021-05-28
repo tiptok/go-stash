@@ -23,6 +23,18 @@ type (
 		Compress      bool   `json:",default=false"`
 	}
 
+	PostgresqlConf struct {
+		Host         string
+		Port         string
+		User      string
+		Password      string
+		DBName 		  string
+		MaxQueueSize  int `json:",default=10000"`
+		BatchSize  int `json:",default=100"`
+		ThreadSize    int `json:",default=2"`
+		Interval      int `json:",default=5"`
+	}
+
 	Filter struct {
 		Action     string      `json:",options=drop|remove_field|transfer"`
 		Conditions []Condition `json:",optional"`
@@ -50,7 +62,8 @@ type (
 		}
 		Filters []Filter `json:",optional"`
 		Output  struct {
-			ElasticSearch ElasticSearchConf
+			ElasticSearch ElasticSearchConf `json:",optional"`
+			Postgresql   PostgresqlConf `json:",optional"`
 		}
 	}
 
