@@ -35,13 +35,14 @@ func NewMessageHandlerPG(constant config.PostgresqlConf) *MessageHandlerPG {
 		db:         DB,
 		conf:       constant,
 		queue:      collection.NewQueue(constant.MaxQueueSize),
-		limitCount: int32(float64(constant.MaxQueueSize) * 0.9),
+		limitCount: int32(float64(constant.MaxQueueSize) * 0.8),
 	}
 
 	for i := 0; i < constant.ThreadSize; i++ {
-		go handler.TimerConsume()
+		thread :=i
+		go handler.TimerConsume(thread)
 	}
-	go handler.timerCreateLogTable()
+	go handler.TimerCreateLogTable()
 	return handler
 }
 
@@ -63,54 +64,60 @@ func (mh *MessageHandlerPG) Consume(_, val string) error {
 	mh.queue.Put(m)
 	atomic.AddInt32(&mh.count, 1)
 	if mh.count > mh.limitCount {
-		if _, ok := mh.queue.Take(); ok {
-			atomic.AddInt32(&mh.count, -1)
-		}
+		time.Sleep(time.Second * time.Duration(mh.conf.SleepInterval))
 	}
 	return nil
 }
 
-func (mh *MessageHandlerPG) TimerConsume() {
+func (mh *MessageHandlerPG) TimerConsume(threadId int) {
+	fmt.Printf("[logstash] Begin TimerConsume : %v \n",threadId)
 	t := time.Tick(time.Second * time.Duration(mh.conf.Interval))
 	for range t {
 		threading.RunSafe(
 			func() {
-				var logs []*Logs
-				for i := 0; i < mh.conf.BatchSize; i++ {
-					item, ok := mh.queue.Take()
-					if !ok {
-						break
+				for mh.count > 0 {
+					var logs []*Logs
+					for i := 0; i < mh.conf.BatchSize; i++ {
+						item, ok := mh.queue.Take()
+						if !ok || item == nil {
+							break
+						}
+						atomic.AddInt32(&mh.count, -1)
+						if m, ok := item.(map[string]interface{}); ok {
+							logs = append(logs, &Logs{
+								Log:     m,
+								LogTime: time.Now(),
+							})
+						}
 					}
-					atomic.AddInt32(&mh.count, -1)
-					if m, ok := item.(map[string]interface{}); ok {
-						logs = append(logs, &Logs{
-							Log:     m,
-							LogTime: time.Now(),
-						})
+					if len(logs) > 0 {
+						if _, err := mh.db.Model(&logs).Insert(); err != nil {
+							fmt.Println("[logstash] Insert Error:", err)
+						}
+					}
+					if mh.count>0{
+						fmt.Printf("[logstash] Thread:%v Queue:%v \n",threadId, mh.count)
 					}
 				}
-				if len(logs) > 0 {
-					_, err := mh.db.Model(&logs).Insert()
-					fmt.Println(err)
-				}
-				fmt.Printf("logstash thread:%v queue:%v \n", threading.RoutineId(), mh.count)
-			},
-		)
-	}
-}
-
-func (mh *MessageHandlerPG) timerCreateLogTable() {
-	t := time.NewTimer(time.Hour * 6)
-	for range t.C {
-		threading.RunSafe(
-			func() {
-				mh.timerCreateLogTable()
 			},
 		)
 	}
 }
 
 func (mh *MessageHandlerPG) TimerCreateLogTable() {
+	t := time.NewTimer(time.Hour * 6)
+	fmt.Printf("[logstash] Begin TimerCreateLogTable \n")
+	mh.createLogTable()
+	for range t.C {
+		threading.RunSafe(
+			func() {
+				mh.createLogTable()
+			},
+		)
+	}
+}
+
+func (mh *MessageHandlerPG) createLogTable() {
 	var err error
 	// creates database schema for Log models.
 	err = mh.db.Model(&Logs{}).CreateTable(&orm.CreateTableOptions{
@@ -128,6 +135,7 @@ func (mh *MessageHandlerPG) TimerCreateLogTable() {
 		if err != nil {
 			log.Fatal(err)
 		}
+
 		// logData := &Logs{
 		//     Log: map[string]interface{}{"msg":"test"},
 		//     LogTime:   logStartTime,
@@ -152,7 +160,7 @@ func createNewPartition(db *pg.DB, currentTime time.Time) error {
 		firstOfMonth.Format(time.RFC3339Nano),
 		firstOfNextMonth.Format(time.RFC3339Nano),
 	)
-
+	fmt.Println("[logstash] Create Partition:",sql)
 	_, err := db.Exec(sql)
 	return err
 }

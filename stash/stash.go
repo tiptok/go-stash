@@ -80,8 +80,6 @@ func main() {
 		if len(processor.Output.Postgresql.Host) > 0 {
 			handle := handler.NewMessageHandlerPG(processor.Output.Postgresql)
 			handle.AddFilters(filters...)
-			handle.TimerCreateLogTable()
-
 			
 			for _, k := range toKqConf(processor.Input.Kafka) {
 				group.Add(kq.MustNewQueue(k, handle))
